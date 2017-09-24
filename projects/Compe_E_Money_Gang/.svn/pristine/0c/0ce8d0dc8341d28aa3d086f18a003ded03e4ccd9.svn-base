@@ -1,0 +1,21 @@
+#ifndef _CONTEXT_SWITCH_H
+#define _CONTEXT_SWITCH_H
+
+#define NUM_PID 50 //Should be 32,768 if we weren't concerned with using up kernel memroy
+
+extern int pid_array[NUM_PID];
+
+
+/* Checks if the given pid is currently in use. */
+extern int check_pid(int pid);
+
+/* Checks out the lowest unused pid. */
+extern int new_pid_checkout();
+
+/* Returns the lowest unused pid. */
+extern int get_new_pid();
+
+/* Marks the given pid as "not in use". */
+extern int remove_pid(int pid);
+
+#endif /* _CONTEXT_SWITCH_H */

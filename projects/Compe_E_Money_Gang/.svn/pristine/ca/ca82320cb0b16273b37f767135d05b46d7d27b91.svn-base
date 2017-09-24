@@ -1,0 +1,176 @@
+COMPE E MONEY GANG BUG LOG
+
+I wanted to throw this into the repository, just in case you guys had some time or thought of any bugs, you could throw them in here so we can get the ball rolling. Format isn't terribly important right now, but try to keep it roughly formatted as what I've added (I'll be adding more to this list after I get some more work done on the OS).
+
+
+///////////////////////////////
+///////////Bug list////////////
+///////////////////////////////
+
+
+Bug Title: Only having a single PTE
+Time Frame: Checkpoint 5
+Bug Description: As we began working on multiple terminals, changing the video memory from xB8000 to the private video memories was not happening properly (the TLB showed no change after our page table modifying code). It turns out we still only had a single page table entry that we were modifying for each of the processes, effectively forcing them to share a single mapping. We revamped our paging structure, now with each terminal having its own PTE.
+
+
+Bug Title: Incorrect Page Directory modification
+Time Frame: Checkpoint 5
+Bug Description: Connected to the bug above, our page table entry modifying code was incorrectly formatted. We had forgotten that the addresses were 4KB aligned. The solution was to simply bitmask the low 12 bits, which gave us the proper addresses to modify our page directories and page tables in our non-initializing code.
+
+
+Bug Title: Forgetting to define macro
+Time Frame: Extra Credit
+Bug Description: In an attempt to use color changing MP2 code in our OS, I attempted to use the macro REPOUTSB forgetting to include it into the library file. Currently it has not been added due to replanning how to go about adding different colors to our OS.
+
+
+Bug Title: Incorrect virtual address in vidmap
+Time Frame: Checkpoint 5
+Bug Description: After we changed our paging scheme to support multiple PTEs, one for each terminal, we also changed what virtual addresses corresponded to each terminal's video memory. We forgot to change the address that the vidmap system call returns.
+
+
+Bug Title: Setting up the three terminals (scheduling)
+Time Frame: Checkpoint 5
+Bug Description: We had a lot of conceptual issues in understanding exactly how the stack is set up for a process that has been scheduled "away from" so to speak. Similar to execute, we put a fake sleeping context for two shells into their corresponding places, and then execute the third shell, where scheduling takes over and uses the other two terminals. After much deliberation and documentation searching, we found the proper setup on the kernel stack.
+
+
+Bug Title: Pointing esp0 to the bottom of the stack
+Time Frame: Checkpoint 5
+Bug Description: Another issue we had for scheduling is we didn't realize that esp0 must ALWAYS point to the bottom of the stack. We thought that it had to be the top of the stack in case the scheduler interrupted a system call. However we eventually discovered through the INTEL documentation that esp0 is only updated when switching from user to kernel privilege, which means that esp0 reloading does not endanger the system call that may be running.
+
+
+Bug Title: Cannot run fish in shells other than process 0
+Time Frame: Checkpoint 5
+Bug Description: After correcting the virtual address in vidmap, we found that fish only worked properly when it is executed from the first shell (even with stacked shells).  We realized that we were clearing the video memory for each of the private video memories, and overwriting the attribute values as well. Fish was always executing, it was just printing black text. We changed how we were clearing the private video memory, and it works fine!
+
+
+Bug Title: Crazy Text Video
+Time Frame: Checkpoint 5
+Bug Description: We did not clear the private video memory for each terminal's offscreen. When we copied the information over, we loaded garbage into video memory (which looked really fun and festive!). We solved this by using memset to set all of the memories to non-written values. Unforutnately this caused a bug for fish later on. 
+
+
+Bug Title: Incorrect Screen Position after history
+Time Frame: Extra Credit
+Bug Description: We modified the way we save the screen information when we switch between terminals to make it more compatible with using terminal history, however we broke the correct implementation of saving the screen information. We rolled back our changes and reconfigured terminal history to work with our correct screen setup.
+
+
+Bug Title: Forgot to enable 4MB pages
+Time Frame: Checkpoint 1
+Bug Description: We had setup our intializing paging, but we kept page faulting. It turned out that we had forgotten to set paging support for 4MB pages in CR4. This took us far too long to realize.
+
+
+Bug Title: Incorrect parameters to rtc_write system call
+Time Frame: Checkpoint 2
+Bug Description: We had used the parameter convention that OSDEV uses instead of reading the documentation to see that a power of 2 interrupt rate should be passed in. This was quickly fixed by using a switch statement that converts the frequency parameter into the required rate for modifying the RTC registers.
+
+
+Bug Title: Single Reading State
+Time Frame: Checkpoint 5
+Bug Description: We only had one reading state for all three terminals, so that when we could execute something on one terminal, we would have to press enter before the next terminal would recognize that a command was given. We fixed it by makin 3 separate reading states, one for each terminal.
+
+
+Bug Title: Command History
+Time Frame: Extra Credit
+Bug Description: We were counting in the wrong direction through our indices, which was resulting in bizarre behaviour for our command history implementation. We fixed it only to find that it would not have separate histories for each of the terminals, which we fixed by ensureint that the history index was always positive (the mod function does not always output a positive number)
+
+
+
+Bug Title: Virtualizing the RTC
+Time Frame: Extra Credit
+Bug Description: When we changed the RTC, we didn't properly have the 3 flags, one for each terminal. It was running RTC related programs improperly with large delay times, because the flag kept getting reset while a rtc_read sys call was sleeping for a program. By adding the other 2 flags, proper virtualization was observed.
+
+
+Bug Title: Improper Execute IRET Context
+Time Frame: Checkpoint 3
+Bug Description: We had a large amount of trouble in properly putting the artificial IRET context on the stack for the execute system call to use. This really is a series of small bugs and incorrect understandings that were eventually ironed out over a weekend.
+
+
+Bug Title: Checking too much ELF
+Time Frame: Checkpoint 3
+Bug Description: For our execute system call, we checked too muhc of the user executable for ELF header values. Instead of just checking for the ELF with the magic number, we checked to make sure that the entire header was there, which apparently it wasn't. Afterwards we only checked for the magic numbers to verify that it was a correct executable.
+
+
+Bug Title: Incorrect RTC Read and Write (post-virt)
+Time Frame: Checkpoint 5
+Bug Description: We had the ability for a user program to turn off RTC interrupts, but it was causing grep to return -1, which is not expected for an RTC read. We reworked some of the RTC system calls, and now it works properly with grep as well as with funcitons that use the RTC.
+
+
+Bug Title: One too many newlines
+Time Frame: checkpoint 5
+Bug Description: When we would fill up the screen to past the max width, press backspace and then enter. It would print two newlines, which was not desired. It was fixed by simply using a flag to skip this behavior.
+
+
+Bug Title: Cannot reduce RGB
+Time Frame: Extra Credit
+Bug Description: When moving in large mode to reduce R,G or B values, it wouldn't properly change the RGB values of the terminal.  The RGB values also loop when going up from the default values. These bugs were fixed by double checking the default values, which were outside the understood bounds.
+
+
+Bug Title: Incorrect packet reading from the mouse port
+Time Frame: Extra Credit
+Bug Description: Three packets are needed to obtain information from the mouse. We tried reading all three packets after one interrupt, which messed up the whole system. It worked after only reading in one packet after each interrupt for three interrupts
+
+
+Bug Title: Mouse would not move
+Time Frame: Extra Credit
+Bug Description: We wrote everything for the mouse driver, which seemed to be correct, except we forgot to enable auxiliary input for the mouse which makes everything work
+
+
+Bug Title: Top Left Pixel Never Printed
+Time Frame: Checkpoint 2
+Bug Description: The top left pixel of the screen would never be printed regardless of if a putc() occured while screen_x and screen_y were at that spot. Fixed off by 1 error which did not print characters if the screen_x and screen_y were both 0.
+
+
+Bug Title: File System Method
+Time Frame: Checkpoint 2
+Bug Description:  The this is not really a bug but more of a methodology change. At the beginning we were trying to access the file system via pointers and offsets. We soon realized that this was highly inaccurate and caused a lot of page faults so we began using packed structs in order to access memory
+
+
+Bug Title: Terminal Read
+Time Frame: Checkpoint 2
+Bug Description: We first thought that when terminal read was called it should immediately place the text into the buffer provided as opposed to waiting for enter to be pressed then filling the data in.
+
+
+Bug Title: Didnt save EBP
+Time Frame: Checkpoint 5
+Bug Description: When we performed the context switch we forgot to switch EBP. This lead to some wonky behaviour because ESP was switched and not EBP
+ 
+ 
+Bug Title: CR3 reload when switching terminals
+Time Frame: Checkpoint 3.5
+Bug Description: We did not switch out CR3 with each terminal's shell when performing memcopies. This resulted in video memory being completely wrong for each terminal
+
+
+Bug Title: 
+Time Frame: 
+Bug Description: 
+
+
+
+
+/////////////////////////////////////////////////
+////////Implemented Extra Credit Features////////
+/////////////////////////////////////////////////
+
+Cursor:
+	The cursor properly updates for each terminal. The required version of our OS does not support proper cursor functionality for multiple terminals. This helps the user identify where he is modifying the screen information by inputting text, and is an expected feature of virtually any text-based application.
+
+
+Virtualized RTC:
+	The RTC should be virtualized, which means different processes can set their own interrupt rates, which are used in their own rtc read system calls. Again, it seems to be working, but it's hard to prove other than showing the variables changing and it actually counting down.
+
+
+Command History:
+	By using the up and down arrows, you can traverse up to the last 8 inputs in your terminal.
+
+
+RGB Manipulation:
+	We give the user the ability to manipulate the color of text and background, with a whole suite of options, such as making all three the same, resetting to default, and changing the method of the cursor coloring.
+
+
+Mouse Driver:
+	The mouse controls a cursor on the screen, which inverts the background and text colors, showing the location of the mouse. (Impending click/scroll support)
+
+
+Tab Completion:
+	By pressing tab, the kernel automatically fills out the suggested thing you would type out.
+
+

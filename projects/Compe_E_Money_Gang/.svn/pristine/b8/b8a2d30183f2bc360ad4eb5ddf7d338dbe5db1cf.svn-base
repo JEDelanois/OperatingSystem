@@ -1,0 +1,58 @@
+#define ASM     1
+
+.text
+
+.globl execute_IRET, halt_RET
+
+.align 4
+
+# Register List
+# eax = eip
+# ebx = cs/eflags modifier  !!!!ebx does not hold flags!!!! corect?
+# ecx = esp/eflags modifier
+# edx = ss
+
+
+execute_IRET:
+	cli
+	pushl	%ebp
+	movl	%esp, %ebp
+
+	movl	8(%ebp),%eax	#get eip
+	movl	12(%ebp),%ebx	#get cs
+	movl	16(%ebp),%ecx	#get esp
+	movl	20(%ebp),%edx	#get ss
+
+	pushl	%edx	#push ss
+	pushl	%ecx	#push esp
+
+	# turn on interrupt flag
+	pushf
+	popl	%ecx	#get flags
+	orl		$0x200, %ecx	#modify flags
+	pushl	%ecx	#push flags
+
+	pushl	%ebx	#push cs
+	pushl	%eax	#push eip
+	
+	# change data segment
+	movw %dx, %ds
+	iret
+
+halt_RET:
+	leave
+	ret
+
+	
+	
+#stack for iret is called
+#*********top**********
+#eip
+#cs
+#flsgs
+#esp
+#ss
+#*********bottom********
+
+
+

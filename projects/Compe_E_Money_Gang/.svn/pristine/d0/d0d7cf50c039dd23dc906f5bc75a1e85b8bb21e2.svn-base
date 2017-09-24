@@ -1,0 +1,45 @@
+#ifndef _PAGING_H
+#define _PAGING_H
+
+#include "types.h"
+
+#define VIDEO_MEM_IDX 0xB8
+#define KERNEL_LOC 0x400000
+#define MB_PAGE_BIT 0x80
+#define NOT_PRESENT 0x2
+#define PRESENT_SUPERVISOR 0x3
+#define PRESENT_UNSUPERVISED 0x7
+#define NUM_ENTRIES 1024
+#define GLOBAL 0x100
+#define USER_VIRT_IDX 32
+#define USER_VID_IDX 34
+#define FOUR_MB 0x400000
+
+/* This initializes the paging system. Creates a paging directory, fill it with nonpresent
+paging tables, and loads the appropriate values to the processor registers for proper
+paging functionality */
+
+uint32_t page_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_1_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_2_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_3_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_4_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_5_dir[1024] __attribute__((aligned(4096)));
+uint32_t user_6_dir[1024] __attribute__((aligned(4096)));
+
+uint32_t first_page_table[1024] __attribute__((aligned(4096)));
+uint32_t user_vid_mem[1024] __attribute__((aligned(4096)));
+
+uint32_t* page_dir_array[50];
+
+/*initializes paging and sets up kernel and video mem pages. */
+extern void initPaging();
+
+/* Switches the contents of the current process page directory entry to */
+extern int create_process_page(int pid);
+
+/* Switches the contents of the current process page directory entry to support the current
+	process we're changing to. */
+extern int switch_process_pde(int pid);
+
+#endif /* _PAGING_H */

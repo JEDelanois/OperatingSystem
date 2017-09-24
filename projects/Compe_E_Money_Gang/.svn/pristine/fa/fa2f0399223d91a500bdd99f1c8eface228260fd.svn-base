@@ -1,0 +1,8 @@
+#ifndef _CONTENT_HELPER_H
+#define _CONTENT_HELPER_H
+
+// STACJ CHECKS cause it messes the kernel stack up
+extern void execute_IRET(uint32_t eip, uint32_t cs, uint32_t esp, uint32_t ss);
+// extern uint32_t halt_RET;
+
+#endif /* _CONTENT_HELPER_H */

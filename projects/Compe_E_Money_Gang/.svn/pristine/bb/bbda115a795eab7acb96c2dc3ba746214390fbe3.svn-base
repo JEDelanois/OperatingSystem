@@ -1,0 +1,239 @@
+#include "lib.h"
+#include "x86_desc.h" 
+#include "keyboard.h"
+#include "i8259.h"
+#include "wrapper.h"
+#include "idt.h"
+#include "terminal_driver.h"
+
+
+#define SHIFT_OFFSET 256
+
+/*TODO: E, Q, R, T, W, I don't work on double shift but don't work regularly
+		update C, M, T, V, X, Y, Z don't work*/
+
+//array to map each key with a character
+unsigned char keycode_to_ascii[512] = {
+	//Normal characters block											127 is delete
+	0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', (unsigned char)127, 0, 'q', 'w', 'e', 'r',  
+	't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', 
+	0, '`', 0, 0x5C, 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, 0, 0, ' ', 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+	//Capitals/symbols block (The empty space above is used by the keyboard
+	// to signal that the key has been let go, thus we must create new space to use)
+	0, 0, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0, 0, 'Q', 'W', 'E', 'R', 
+	'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', 
+	0, '~', 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+int rtc_action = 0;
+int shift = 0;
+int capital_mode = 0;
+int control = 0;
+
+unsigned char keyboard_buff[KEY_BUFF_SIZE+1];
+
+//buffer index
+int buffIdx = -1;
+
+//enter state
+volatile int enter_state = 0;
+
+/*
+ *   init_keyboard
+ *   DESCRIPTION: initializes the keyboard device
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Updates IDT for the keyboard (0x21) 
+ */   
+void init_keyboard() {
+	
+	set_intrpt_gate_desc(IRQ1);				//update idt struct
+
+
+	SET_IDT_ENTRY(idt[IRQ1], keyboard_wrapper);	//set table and offsets from struct
+
+	enable_irq(1);							//enable on the pic
+	
+	return;
+}
+
+
+/*
+ * keyboard_handler
+ *   DESCRIPTION:	 Handles each interrupt from the keyboard 
+ *   INPUTS: none
+ *   OUTPUTS: prints a character to the screen 
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Disables keyboard interrupts during process. If F1 or F2 pressed, rtc interrupts stop or start (its irq gets masked/umasked)
+ * ##BUG## Holding enter for a few seconds and then writing crashes the kernel ##BUG##
+ * ##NOTE## This function compiles with warnings due to initializing global variables at declaration, need to fix ##NOTE##
+ */   
+void keyboard_handler() {
+	
+	int button;
+	int a;
+	
+
+	//read keyboard stroke
+	button = inb(KEYBOARD_PORT);
+	
+	//Control the state of capslock and shift
+	if(button == 58)							//Caps Lock toggle on press
+		capital_mode = !capital_mode;
+
+	if((button == 42)||(button == 54))			//Enable shift when pressed
+		shift = 1;
+
+	if((button == 170)||(button == 182))		//Disable shift when unpressed
+		shift = 0;
+
+	// check if control is pressed
+	if (button == 0x1D)
+		control = 1;
+
+	// check if control is released
+	if (button == 0x9D)
+		control = 0;
+		
+	if((button == 72)||(button == 80)){
+			acess_history(button);
+		}
+
+//Printing code. Take into account the modifiers if they are needed
+
+	//Variable to denote that the button in question is non-symbolic
+	// (This is used for caps lock to keep Windows fucntionality)
+	int alpha = ((15 < button)&&(button < 26)) || 
+				((29 < button)&&(button < 39)) ||
+				((43 < button)&&(button < 52));
+
+	//Uncompressed logic for shift and capslock printing.
+	// Later this will be reduced in size/complexity
+
+	if(keycode_to_ascii[button] != (char) 0){
+		// check if control-L combo
+		if ((control == 1) && (button == 0x26))
+		{
+			// clear screen
+			clear();
+			
+			//clear keyboard buffer
+			for(a = 0; a <= buffIdx; a++){
+				keyboard_buff[a] = (char)0;
+			}
+			buffIdx = -1;
+		}
+		else if(capital_mode == 0){
+			if(shift == 1){
+				keyboardToScreen(keycode_to_ascii[button + SHIFT_OFFSET]);
+				}
+			else{
+				keyboardToScreen(keycode_to_ascii[button]);
+				}
+		}
+		else{
+			if(alpha){
+				if(shift == 0){
+					keyboardToScreen(keycode_to_ascii[button + SHIFT_OFFSET]);
+					}
+				else{
+					keyboardToScreen(keycode_to_ascii[button]);
+					}
+			}
+			else{
+				if(shift == 1){
+					keyboardToScreen(keycode_to_ascii[button + SHIFT_OFFSET]);
+					}
+				else{
+					keyboardToScreen(keycode_to_ascii[button]);
+					}
+			}
+		}
+	}
+
+	//Disable IRQ interrupts with F2
+	if(button == 60){
+		rtc_action = 0;
+	}
+	//Enable IRQ interrupts with F1
+	if(button == 59) {
+		rtc_action = 1;
+	}
+	
+	send_eoi(1);
+
+	return;
+}
+
+void keyboardToScreen(char keyPress)
+{
+	//if delete then delete
+	if(keyPress ==  (char)127){
+		if(buffIdx != -1)
+		{
+			// write to screen
+			deleteChar();
+			// change buffer
+			keyboard_buff[buffIdx] = (char)0;
+			buffIdx--;
+		}
+	}
+	else if(keyPress == '\n'){
+		//MAKE FUNCTION CALL HERE TO HANDLE ENTERED COMMAND
+
+		// test code for checkpoint 2
+/*		int8_t * test = "continue";
+		if (!strncmp(test, (int8_t *)keyboard_buff, strlen(test)+1))
+			goOn = 1;
+		else
+			printf("\nType continue to go on: ");*/
+
+		// print char
+		putc(keyPress);
+		buffIdx++;
+		keyboard_buff[buffIdx] = '\n';
+		enter_state = 1;
+
+		if (!reading)
+		{
+			//clears the keyboard buffer and reaset the index
+			int a;
+			for(a = 0; a <= buffIdx; a++){
+				keyboard_buff[a] = (char)0;
+			}
+			buffIdx = -1;
+		}
+	}
+	else if (buffIdx < (KEY_BUFF_SIZE - 1))
+	{
+		// write to screen
+		putc(keyPress);
+		// change buffer
+		//increment buffer position
+		buffIdx++;
+		//copy character
+		keyboard_buff[buffIdx] = keyPress;
+	}
+}
+

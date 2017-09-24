@@ -1,0 +1,98 @@
+?????????????
+Extra credit:
+?????????????
+
+
+Party text / file button left of right ctrl - 93 (double check this, oinly happens occasionally)
+
+foreground: 0xA8
+
+
+PARTY MODE----------------------------------
+
+Party!
+
+
+GUI?----------------------------------------
+
+This was Jon's idea, maybe he'll look into it. Personally I'm not too into it
+
+
+
+SOUND DRIVER-------------------------------
+
+Bootup noise?
+
+Play noise? I don't really know how to demonstrate this in a conventient way.
+
+
+
+MOUSE DRIVER------------------------------
+
+Need clicks and possibly scroll later on
+
+
+
+REPRINTING KEYBOARD BUFFER----------------
+
+Reprint the buffer to the screen after the process is done, i.e. see Linux
+
+
+MALLOC----------------------------------
+
+paging.h
+// malloc stuff
+uint32_t malloc_page_table[1024] __attribute__((aligne(4096)));
+uint32_t user_4_malloc[1024] __attribute__((aligne(4096)));
+uint32_t user_5_malloc[1024] __attribute__((aligne(4096)));
+uint32_t user_6_malloc[1024] __attribute__((aligne(4096)));
+
+paging.c
+user_4_dir[USER_VIRT_IDX+1] = ((unsigned int) user_4_malloc) | PRESENT_UNSUPERVISED;
+
+user_5_dir[USER_VIRT_IDX+1] = ((unsigned int) user_5_malloc) | PRESENT_UNSUPERVISED;
+
+user_6_dir[USER_VIRT_IDX+1] = ((unsigned int) user_6_malloc) | PRESENT_UNSUPERVISED;
+
+for(i = 0; i < NUM_ENTRIES; i++)
+	malloc_page_table[i] = ((FOUR_MB * 8) + i * 0x1000) | NOT_PRESENT;
+
+system_call_handler.c
+
+// Malloc system call
+int32_t malloc_handler(int32_t numBytes)
+{
+	int i;
+	for (i = 0; i < 1024; i++)
+	{
+		// check for not present pages
+		if (malloc_page_table[i] & PRESENT_UNSUPERVISED)
+		{
+			// do stuff
+		}
+	}
+	return 0;
+}
+
+
+POOR MANS PAINT---------------------------
+
+Implement an easy kernel painting program.
+
+Global flag indicating whether we are in paint mode
+	-mask out switch_shell while in paint mode |done|
+	-
+
+Enter paint mode in mouse_cursor_helper (when paint mode = 0 & middle click)
+	-move current terminal to private video memory (copy & paging)
+	-clear out the screen using clear_init()? Or just clear the text? I think just clear. |done|
+	-force normal_cursor == 0
+
+	-mouse_cursor helper needs to not erase where it was drawing
+
+
+	when paint mode & middle click
+	-move current terminal to public video memory (copy & paging) |done|
+
+
+	All that's left to do is to use middle_click correctly

@@ -1,0 +1,145 @@
+#include "process_data.h"
+#include "context_switch.h"
+#include "x86_desc.h"
+#include "paging.h"
+
+
+/* This file contains the management of all of the data related to each process
+including the PCB, TSS, and other information. This file doesn't include context switching.
+(See context_switch.c for implementation) */
+
+
+/*
+ * create_PCB
+ *   DESCRIPTION: Creates and Initializes relevant data for a process to be created
+ *   INPUTS: parent_PCB -- Pointer to the parent process's PCB, or NULL for no parent.
+ *			 args -- Arguments passed in and parsed by execute.
+ *   OUTPUTS: none
+ *   RETURN VALUE: returns the pointer to the newly created PCB.
+ *   SIDE EFFECTS: none
+ */  
+PCB_struct_t* create_PCB(PCB_struct_t * parent_PCB, uint8_t* args){
+
+	int new_pid = new_pid_checkout();
+	PCB_struct_t * new_PCB = (PCB_struct_t *) (END_KERNEL_MEM - KERNEL_STACK_SIZE*(new_pid + 1));
+
+	//Start filling information
+	(*new_PCB).pid = new_pid;
+	(*new_PCB).user_stack_ptr = (uint32_t*) VIRT_USER_MEM;
+	(*new_PCB).kernel_stack_ptr = (uint32_t*) ((END_KERNEL_MEM - KERNEL_STACK_SIZE*(new_pid)) - 0x4);
+
+	//We need to get the address of the page directory
+	(*new_PCB).curr_page_dir = page_dir_array[new_pid];
+
+	//Fill in the parent PCB pointer (If we have global PCB pointer, use that and change it here)
+	// if(NULL == parent_PCB)
+	// 	(*new_PCB).parent_PCB_ptr = new_PCB;
+	// else
+	(*new_PCB).parent_PCB_ptr = parent_PCB;
+
+	//Use the parent's PCB to calculate the needed parent info.
+	if (new_PCB->parent_PCB_ptr == NULL)
+	{
+		new_PCB->parent_page_dir = NULL;
+		new_PCB->parent_kernel_stack = NULL;
+	}
+	else
+	{
+		(*new_PCB).parent_page_dir = (*(*new_PCB).parent_PCB_ptr).curr_page_dir;
+		(*new_PCB).parent_kernel_stack = (*(*new_PCB).parent_PCB_ptr).kernel_stack_ptr;
+	}
+
+	//Initialize file array with stdin and stdout and clear all other idxs
+	set_file_array(new_PCB);
+
+	//Set the arguments in the PCB based on the values passed in.
+	int i;
+	for(i = 0; i <KEYBOARD_BUFF_SIZE; i++){
+		if(args[i] != NULL){
+			(*new_PCB).arguments[i] = args[i];
+		}
+		else{
+			(*new_PCB).arguments[i] = (uint32_t) 0;
+		}
+	}
+
+	return new_PCB;
+}
+
+
+
+
+/*
+ * remove_PCB
+ *   DESCRIPTION: Removes a PCB struct and checks out the pid
+ *   INPUTS: pid -- the process id of the PCB needing to be removed
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 on success, -1 on generalized error
+ *   SIDE EFFECTS: none
+ */  
+int remove_PCB(int pid){
+
+	//The PCB is not actually allocated, nothing special needs to be done that
+	// we know of right now. Just removes the pid from use.
+
+	remove_pid(pid);
+
+	//modify the tss such that get_PCB does not point
+	// to the newly removed PCB struct
+
+	return 0;
+}
+
+
+int32_t set_file_array(PCB_struct_t* pcb){
+	stdin_set(pcb);
+	stdout_set(pcb);
+	clear_file_array(pcb);
+	return 0;
+	
+}
+
+int32_t stdin_set(PCB_struct_t* pcb){
+	dentry_t dentry;
+	stdin_open_file(&pcb->file_array[0], &dentry);
+	return 0;
+}
+
+int32_t stdout_set(PCB_struct_t* pcb){
+	dentry_t dentry;
+	stdout_open_file(&pcb->file_array[1], &dentry);
+	return 0;
+}
+
+int32_t clear_file_array(PCB_struct_t* pcb){
+	int fd;
+	for(fd = 2; fd < 8; fd++){ 
+		pcb->file_array[fd].fop_table_ptr = NULL;
+		pcb->file_array[fd].inode_ptr = NULL;
+		pcb->file_array[fd].file_pos = 0;
+		pcb->file_array[fd].flags = 0;
+	}
+
+	return 0;
+}
+
+
+/*
+ * get_PCB
+ *   DESCRIPTION: Returns the address of the current PCB struct using the TSS's esp0.
+ *   INPUTS:
+ *   OUTPUTS: none
+ *   RETURN VALUE: address of the current PCB on success, -1 on generalized error
+ *   SIDE EFFECTS: none
+ */  
+PCB_struct_t* get_PCB(){
+
+	int address;								//Holds the value to be returned.
+	int k_stack_ptr = (int) tss.esp0;			//Holds the kernel stack pointer.
+
+	address = k_stack_ptr & 0xFFFFE000;			//Bitmask to jump to the correct kernel stack boundary
+	return (PCB_struct_t*) address;
+}
+
+
+

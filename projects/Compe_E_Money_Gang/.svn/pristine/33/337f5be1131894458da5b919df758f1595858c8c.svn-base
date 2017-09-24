@@ -1,0 +1,26 @@
+#ifndef _KEYBOARD_H
+#define _KEYBOARD_H
+
+
+#define IRQ1 0x21
+#define IRQ8 0x28
+#define KEYBOARD_PORT 0x60
+#define KEY_BUFF_SIZE 128
+
+extern int rtc_action;
+extern int shift;
+extern int capital_mode;
+extern int control;
+extern unsigned char keyboard_buff[KEY_BUFF_SIZE+1];
+extern int buffIdx;
+extern volatile int enter_state;
+
+//Initializes keyboard
+extern void init_keyboard();
+
+//Handler for the keyboard
+extern void keyboard_handler();
+
+void keyboardToScreen(char keyPress);
+
+#endif /* _KEYBOARD_H */

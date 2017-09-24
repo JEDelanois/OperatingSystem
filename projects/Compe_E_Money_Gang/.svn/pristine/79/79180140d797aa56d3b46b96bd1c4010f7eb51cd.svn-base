@@ -1,0 +1,411 @@
+#include "filesys_driver.h"
+#include "lib.h"
+#include "file_descriptor.h"
+
+#define TOTAL_INODES_OFF 0x04 //4 byte offset
+#define FILE_OFFSET 0x40	//64 Bytes
+#define FILE_NAME_SIZE 0x20	//32 byts
+#define FILE_TYPE_SIZE 0x04	
+#define BLOCK_SIZE 4096 // 4kb block 
+#define BYTES_IN_FILENAME 32
+
+
+//size 64bytes
+typedef struct __attribute__((__packed__)) dirEntryStruc {
+	uint8_t filename[32];
+	uint32_t filetype;
+	uint32_t inode_num;
+	uint8_t reserved[24];
+}dirEntryStruc;
+
+/*
+Here we will used packed strucks to map to the memory location in order to make 
+the reading of data simpler each block has a toatal size of 4kb  
+*/
+
+/*
+has a size of 4kb 
+*/
+typedef struct __attribute__((__packed__)) bootBlockStruc {
+	uint32_t num_dir_entries;	
+	uint32_t num_inodes;
+	uint32_t num_data_blocks;
+	uint8_t junk[52];//reserved junk
+	dirEntryStruc dirEntrys[63]; 
+}bootBlockStruc; 
+
+
+/*
+has a size of 4kb 
+*/
+typedef struct __attribute__((__packed__)) inodeStruc {
+	uint32_t length;
+	uint32_t data_block_entry[1023];
+}inodeStruc;
+
+//4kb
+typedef struct __attribute__((__packed__)) dataStruc {
+	uint8_t data[4096];
+}dataStruc;
+
+
+int FILE_SYSTEM;
+
+	func_ptr file_func_table[3] = { (func_ptr)file_open, (func_ptr)read_file_sys, (func_ptr)file_write }; 
+	func_ptr directory_func_table[3] = { (func_ptr)directory_open, (func_ptr)directory_read, (func_ptr)directory_write }; 
+/*
+need to make functions that do :
+open 
+close
+write
+print off all files in directory
+*/
+
+/*
+In all of the open files you must call the int 0x80 command in assembly to 
+call the correct system call you need to be sure to pass the correct paramters
+via the coresponding registers
+
+keep in mind when you use the 0x80 command you will swithc to the 
+coresponding kernel stack and pcb so you can acces the information there
+
+this filesys_driver.c is in the kernel space so this function will be called
+when the 
+
+how do i access to PCB from here?
+*/
+
+/* Function Pointer Array with Different Parameters
+		You need to pick a function pointer type to use as a "generic function pointer", use that type to define 
+		your array, and use explicit casts. Casting one function pointer type to another and then back again is
+		guaranteed to preserve the value. 
+		Then to call add, you need to cast it back to the right type */
+	
+	//'generic' file pointer type
+	//typedef int32_t (*func_ptr)(void);
+	
+	//file operation tables for files and directories
+	
+		
+int32_t file_open(file_entry_t * file_desc_entry, dentry_t * dentry){
+
+		bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	
+		//inodes start at 4kb after boot block
+		inodeStruc * inodestruc = (inodeStruc *)(bootblock + 1);
+
+		//update file descriptor array
+		file_desc_entry->fop_table_ptr = file_func_table;	//file op table pointer (function pointer)
+		file_desc_entry->inode_ptr = (uint8_t *)&inodestruc[dentry->numInode];	
+		file_desc_entry->file_pos = 0;
+		file_desc_entry->flags = 1;
+		
+	return 0;
+}
+int32_t file_close(){
+	return 0;
+}
+int32_t file_write(const void* buf, int32_t nbytes){
+	//printf("FILE WRITE WAS CALLED");
+	return -1;
+}
+
+
+int32_t directory_open(file_entry_t * file_desc_entry,dentry_t * dentry)
+{
+
+		//update file descriptor array
+		file_desc_entry->fop_table_ptr = directory_func_table;	//file op table pointer (function pointer)
+		file_desc_entry->inode_ptr = NULL;	
+		file_desc_entry->file_pos = 0;
+		file_desc_entry->flags = 1;
+
+
+	return 0;
+}
+
+int32_t directory_close()
+{
+	return 0;
+}
+
+int32_t directory_write(const void* buf, int32_t nbytes)
+{
+	return -1;
+}
+
+/*
+What exactly should directory read do?
+*/
+int32_t directory_read(uint32_t fd, int8_t* buff, uint32_t offset, uint32_t length){
+	int i;
+	PCB_struct_t* pcb;
+	pcb = get_PCB();
+	
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	//inodes start at 4kb after boot block
+	//inodeStruc * inodestruc = (inodeStruc *)(bootblock + 1);
+	
+
+	for(i = 0; (i <BYTES_IN_FILENAME)&& (i < length) && (bootblock->dirEntrys[offset].filename[i] != '\0'); i ++){
+		buff[i] = bootblock->dirEntrys[offset].filename[i];
+	}
+	
+	//just for testing
+	//printf("FILE NAME:%s | SIZE %d\n",bootblock->dirEntrys[offset].filename,inodestruc[bootblock->dirEntrys[offset].inode_num].length);
+	
+	pcb->file_array[fd].file_pos += 1;
+	if(offset < bootblock->num_dir_entries )
+		return i;
+	else
+		return 0;
+}
+
+/*
+function to copy whole file from 
+make it this way and just copy the file using the file size
+*/
+
+
+int32_t read_file_sys(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t length){
+	PCB_struct_t* pcb;
+	pcb = get_PCB();
+	int32_t bytes_read;
+	int32_t inode = -1;
+	int i ;
+	uint8_t* inode_ptr = pcb->file_array[fd].inode_ptr;
+	
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	
+	//inodes start at 4kb after boot block
+	inodeStruc * inodestruc = (inodeStruc *)(bootblock + 1);
+	
+	// get inode number and not inode pointer
+	for( i = 0; i < bootblock->num_inodes; i++){
+		if( &inodestruc[i] == (inodeStruc*)inode_ptr){
+			inode = i;
+			break;}
+	}
+
+	if(inode == -1)
+			return -1;
+	
+	bytes_read = read_data (inode, offset , buff , length);
+	
+	pcb->file_array[fd].file_pos += bytes_read;
+	return bytes_read;
+	
+	
+}
+
+
+/*
+function prints file into the buffer
+assumes that "length" can fit into the buffer you pass it
+*/
+int32_t read_file_to_buffer(uint8_t* name, uint8_t* buff, uint32_t offset, uint32_t length){
+	dentry_t dentry;
+	int32_t bytes_read;
+	
+	//get file dentry
+	if (read_dentry_by_name (name,&dentry) == -1)
+		return -1;
+	
+	bytes_read = read_data (dentry.numInode, offset , buff , length);
+	
+
+	return bytes_read;
+	
+	
+}
+
+
+/*
+Function prints file to the screen 
+*/
+int32_t read_file_to_mem(uint8_t* name, uint8_t* dest, uint32_t offset){
+	uint8_t buff[BLOCK_SIZE];
+	dentry_t dentry;
+	int32_t error;
+	int i;
+	uint32_t length;
+	dest[20] = 0;
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	
+	//inodes start at 4kb after boot block
+	inodeStruc * inodestruc = (inodeStruc *)(bootblock + 1);
+	
+	
+	//get dentry info
+	error = read_dentry_by_name (name,&dentry);
+	
+	if(error == -1)
+		return -1;
+		
+	length = inodestruc[dentry.numInode].length;
+	
+	
+	//cant use malloc or memory allocating functions so printing is a b***h
+	//get buffer filled with data and print as many times as you need
+	for(i = 0; length != 0; i++){
+		//
+		if( length > (uint32_t)BLOCK_SIZE){
+		//dont check for error because if length is too long it will return an error
+		//but you need to print in chunks so no way arond this
+			error = read_data (dentry.numInode, offset +(uint32_t)(i*BLOCK_SIZE) , buff , BLOCK_SIZE);
+			length = length - (uint32_t)BLOCK_SIZE;
+			//copy buffer to aproppiate spot in memory
+			
+			memcpy(dest + (i*BLOCK_SIZE), buff,BLOCK_SIZE);
+			// if the function didnt read in a full block
+			//the the length requeseted was too much and you reached
+			//the end of the file so return
+			if(error != BLOCK_SIZE)
+				return 0;
+		}
+		else{//length <= BLOCK_SIZE so this is the last time you need to print
+			read_data (dentry.numInode, offset +(uint32_t)(i*BLOCK_SIZE) , buff , length);
+			
+			//copy buffer to memory
+			memcpy(dest + (i*BLOCK_SIZE), buff,length);
+			
+			length = 0;
+		}
+		
+		
+	}
+	return 0;
+}
+
+
+
+// TODO: for dynamic file systems, remove magic number and extract info
+/*
+make open and close functions  and write all reture simple valuse
+
+make read function wich takes input of a buffer of file name to read
+and prints that file to the screen using printf("%s"); for now
+*/
+
+//global variable used to set start of file system
+int32_t read_dentry_by_name (const uint8_t* fname, dentry_t* dentry)
+{	
+	/*TODO: use string reverse function to reverse fname
+			iterate through each letter, making sure they all match
+			iterate through each file name to check for match
+
+			if match found then extract file name, file type, and inode
+			if match not found then return -1
+	*/
+	int i;
+	
+	// check if string is >32 bytes
+	int nameLength = strlen((int8_t*)fname);
+	if (nameLength > 32)
+		return -1;
+			
+	//get pointer to boot block struct
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+
+	//serch for file
+	for(i =0; i < bootblock->num_dir_entries; i++){// for all the dir entries
+		//if the names match in length and characters
+		if((0 == strncmp((int8_t*) fname, (int8_t*)bootblock->dirEntrys[i].filename,nameLength))
+			&& (strlen((int8_t*)fname) == strlen((int8_t*)bootblock->dirEntrys[i].filename)) ){
+			//get the rest of th data 
+			return read_dentry_by_index(i,dentry);
+		}
+		//printf("\n FOUND -%s-",bootblock->dirEntrys[i].filename);
+		
+		
+	}
+	
+	// if we reach this point, then no file exists with that name
+	return -1;
+	
+}
+
+
+int32_t read_dentry_by_index (uint32_t index, dentry_t* dentry)
+{
+	
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	
+	// check to make sure index is within bounds
+	if (index >= bootblock->num_dir_entries)
+		return -1;
+
+	//get file name
+	strcpy((int8_t*)(*dentry).fileName, (int8_t*)bootblock->dirEntrys[index].filename);
+	
+	//get file type
+	(*dentry).fileType = bootblock->dirEntrys[index].filetype;
+	
+	//get inode location
+	(*dentry).numInode = bootblock->dirEntrys[index].inode_num;
+	
+	//printf("FILE NAME IS : ____%s____", (*dentry).fileName);
+	return 0;
+}
+
+
+/*
+reads data from file specified by inode and puts it into buffer
+*/
+int32_t read_data (uint32_t inode, uint32_t offset, uint8_t* buf, uint32_t length)
+{
+	// NEED TO TEST WITH OFFSETS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	/*TODO: use offset to determine the offset in data block
+			use length to determine bytes to read
+
+			check for offset > file length; look on Piazza
+	*/
+	//get boot block
+	int numDblocks,currb,curri,blocki;
+	bootBlockStruc * bootblock = (bootBlockStruc *)FILE_SYSTEM;
+	
+	//inodes start at 4kb after boot block
+	inodeStruc * inodestruc = (inodeStruc *)(bootblock + 1);
+	
+	//data blocks start after all inodes
+	dataStruc * datastruc = (dataStruc *)(inodestruc + (bootblock->num_inodes));
+	
+	// get number of whole blocks data is in
+	 numDblocks = (inodestruc[inode].length) / BLOCK_SIZE;
+	 
+	 //account for number of partial blocs data is in
+	if(((inodestruc[inode].length)% BLOCK_SIZE) != 0)
+		numDblocks++;
+	
+	if(inode >= (bootblock->num_inodes))
+		return -1;
+		
+	if(offset >= (inodestruc[inode].length))
+		return 0;
+		
+	if(((length + offset) > (inodestruc[inode].length))){
+		length = (inodestruc[inode].length) - offset;
+		}
+	
+	//			start at correct block	dont pass last block
+	for(currb = (offset /(BLOCK_SIZE-1)), curri = 0; currb < numDblocks; currb++){// for all data blocs
+		//if first iteration start at offset
+		if(currb == (offset /(BLOCK_SIZE-1)))
+			blocki = (offset%BLOCK_SIZE);
+		else 
+			blocki = 0;
+		for(; (blocki < BLOCK_SIZE) & (curri < length); blocki++,curri++){//for whole block
+		//				datatrucet  | correct inode data b #	            |  data from block
+			buf[curri] = datastruc[inodestruc[inode].data_block_entry[currb]].data[blocki];
+		}
+
+	}
+	// if((length + offset) == inodestruc[inode].length)
+	// 	return 0;
+
+	//returns length of characters coppied to buffer
+	//it is modified from the length that was origionally passed to it
+	return length;
+}
+
+

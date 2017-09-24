@@ -1,0 +1,37 @@
+boot.o: boot.S multiboot.h x86_desc.h types.h
+context_helper.o: context_helper.S
+system_jump_table.o: system_jump_table.S
+wrapper.o: wrapper.S
+x86_desc.o: x86_desc.S x86_desc.h types.h
+context_switch.o: context_switch.c context_switch.h
+exception_handlers.o: exception_handlers.c system_call_handler.h types.h \
+  dentry.h file_descriptor.h rtc.h process_data.h x86_desc.h \
+  terminal_driver.h lib.h keyboard.h exception_handlers.h i8259.h
+file_descriptor.o: file_descriptor.c file_descriptor.h types.h
+filesys_driver.o: filesys_driver.c filesys_driver.h types.h \
+  file_descriptor.h dentry.h process_data.h x86_desc.h terminal_driver.h \
+  lib.h keyboard.h
+i8259.o: i8259.c i8259.h types.h lib.h
+idt.o: idt.c x86_desc.h types.h lib.h idt.h i8259.h wrapper.h \
+  exception_handlers.h keyboard.h rtc.h dentry.h file_descriptor.h \
+  process_data.h terminal_driver.h system_call_handler.h \
+  system_jump_table.h
+kernel.o: kernel.c multiboot.h types.h x86_desc.h lib.h idt.h i8259.h \
+  debug.h paging.h keyboard.h rtc.h dentry.h file_descriptor.h \
+  process_data.h terminal_driver.h filesys_driver.h system_call_handler.h
+keyboard.o: keyboard.c lib.h types.h x86_desc.h keyboard.h i8259.h \
+  wrapper.h idt.h terminal_driver.h dentry.h file_descriptor.h \
+  process_data.h
+lib.o: lib.c lib.h types.h
+paging.o: paging.c paging.h types.h context_switch.h
+process_data.o: process_data.c process_data.h x86_desc.h types.h \
+  file_descriptor.h terminal_driver.h lib.h keyboard.h dentry.h \
+  context_switch.h paging.h
+rtc.o: rtc.c lib.h types.h x86_desc.h keyboard.h i8259.h wrapper.h idt.h \
+  rtc.h dentry.h file_descriptor.h process_data.h terminal_driver.h
+system_call_handler.o: system_call_handler.c system_call_handler.h \
+  types.h dentry.h file_descriptor.h rtc.h process_data.h x86_desc.h \
+  terminal_driver.h lib.h keyboard.h paging.h filesys_driver.h \
+  context_switch.h context_helper.h
+terminal_driver.o: terminal_driver.c terminal_driver.h lib.h types.h \
+  keyboard.h dentry.h file_descriptor.h process_data.h x86_desc.h

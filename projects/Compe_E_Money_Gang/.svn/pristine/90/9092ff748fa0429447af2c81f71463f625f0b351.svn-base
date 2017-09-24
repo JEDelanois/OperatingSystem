@@ -1,0 +1,321 @@
+#include "system_call_handler.h"
+#include "exception_handlers.h"
+#include "lib.h"
+#include "i8259.h"
+
+#define DEBUG 1
+
+/*
+ * errorScreen
+ *   DESCRIPTION: clears screen, prints exception, and halts system
+ *   INPUTS: none
+ *   OUTPUTS: prints exception info onto screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */   
+void errorScreen(int index)
+{
+	// clear the screen
+if(DEBUG){
+	clear();
+	switch (index)
+	{
+		case 0:
+			printf("Divide By Zero");
+			break;
+		case 2:
+			printf("Nonmaskable Interrupt");
+			break;
+		case 3:
+			printf("INT 3: Breakpoint");
+			break;
+		case 4:
+			printf("INTO: Overflow");
+			break;
+		case 5:
+			printf("BOUND: Range Exceed");
+			break;
+		case 6:
+			printf("UD2: Invalid Opcode");
+			break;
+		case 7:
+			printf("Device Not Available");
+			break;
+		case 8:
+			printf("Double Fault");
+			break;
+		case 10:
+			printf("Invalid TSS");
+			break;
+		case 11:
+			printf("Segment Not Present");
+			break;
+		case 12:
+			printf("Stack Segment Fault");
+			break;
+		case 13:
+			printf("General Protection");
+			break;
+		case 14:
+			printf("Page Fault");
+			break;
+		case 16:
+			printf("Floating Point Error");
+			break;
+		case 17:
+			printf("Alignment Check");
+			break;
+		case 18:
+			printf("Machine Check");
+			break;
+		case 19:
+			printf("SIMD Floating Point Exception");
+			break;
+		default:
+			printf("None of the Above %d", index);
+			break;
+	}
+	while (1);
+}
+	//If Debug mode is off, then an excepted program will return to its parent.
+	halt_handler((uint8_t) 256);
+}
+
+
+/*
+ * divideError
+ *   DESCRIPTION: handles divide by zero exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void divideError ()
+{
+	disable_irq(1);
+	errorScreen(0);
+}
+
+/*
+ * nmiInt
+ *   DESCRIPTION: handles non-maskable interrupt exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void nmiInt ()
+{
+	disable_irq(1);
+	errorScreen(2);
+}
+
+/*
+ * breakPoint
+ *   DESCRIPTION: handles break point exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void breakPoint ()
+{
+	disable_irq(1);
+	errorScreen(3);
+}
+
+/*
+ * overflow
+ *   DESCRIPTION: handles overflow exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void overflow ()
+{
+	disable_irq(1);
+	errorScreen(4);
+}
+
+/*
+ * rangeExceed
+ *   DESCRIPTION: handles range exceed exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void rangeExceed()
+{
+	disable_irq(1);
+	errorScreen(5);
+}
+
+/*
+ * invalidOp
+ *   DESCRIPTION: handles invalid Opcode exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void invalidOp()
+{
+	disable_irq(1);
+	errorScreen(6);
+}
+
+/*
+ * deviceNotAvail
+ *   DESCRIPTION: handles device not available exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void deviceNotAvail()
+{
+	disable_irq(1);
+	errorScreen(7);
+}
+
+/*
+ * doubleFault
+ *   DESCRIPTION: handles double fault exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void doubleFault()
+{
+	disable_irq(1);
+	errorScreen(8);
+}
+
+/*
+ * invalidTSS
+ *   DESCRIPTION: handles invalid TSS exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void invalidTSS()
+{
+	disable_irq(1);
+	errorScreen(10);
+}
+
+/*
+ * segNotPresent
+ *   DESCRIPTION: handles segment not present exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void segNotPresent()
+{
+	disable_irq(1);
+	errorScreen(11);
+}
+
+/*
+ * stackSegFault
+ *   DESCRIPTION: handles stack seg fault exception
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void stackSegFault()
+{
+	disable_irq(1);
+	errorScreen(12);
+}
+
+/*
+ * genProtection
+ *   DESCRIPTION: handles general protection exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void genProtection()
+{
+	disable_irq(1);
+	errorScreen(13);
+}
+
+/*
+ * pageFault
+ *   DESCRIPTION: handles page fault exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void pageFault()
+{
+	disable_irq(1);
+	errorScreen(14);
+}
+
+/*
+ * floatError
+ *   DESCRIPTION: handles float error exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void floatError()
+{
+	disable_irq(1);
+	errorScreen(16);
+}
+
+/*
+ * alignCheck
+ *   DESCRIPTION: handles align check exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void alignCheck()
+{
+	disable_irq(1);
+	errorScreen(17);
+}
+
+/*
+ * machineCheck
+ *   DESCRIPTION: handles machine check exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void machineCheck()
+{
+	disable_irq(1);
+	errorScreen(18);
+}
+
+/*
+ * floatSIMD
+ *   DESCRIPTION: handles simd floating point exceptions
+ *   INPUTS: none
+ *   OUTPUTS: prints info to screen
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void floatSIMD()
+{
+	disable_irq(1);
+	errorScreen(19);
+}

@@ -1,0 +1,173 @@
+#include "paging.h"
+#include "context_switch.h"
+
+// Code skeleton found at OSDev Wiki @ http://wiki.osdev.org/Setting_Up_Paging
+/*
+ * initPaging
+ *   DESCRIPTION: initializes paging and sets page for kernel and video mem
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: sets paging scheme and initializes kernel and video mem pages
+ */   
+void initPaging()
+{
+	page_dir_array[0] = user_1_dir;
+	page_dir_array[1] = user_2_dir;
+	page_dir_array[2] = user_3_dir;
+	page_dir_array[3] = user_4_dir;
+	page_dir_array[4] = user_5_dir;
+	page_dir_array[5] = user_6_dir;
+
+	//Fill all entries in the page directory with nonpresent entries
+	int i;
+	for(i = 0; i < NUM_ENTRIES; i++){
+		page_dir[i] = NOT_PRESENT;
+		user_1_dir[i] = NOT_PRESENT;
+		user_2_dir[i] = NOT_PRESENT;
+		user_3_dir[i] = NOT_PRESENT;
+		user_4_dir[i] = NOT_PRESENT;
+		user_5_dir[i] = NOT_PRESENT;
+		user_6_dir[i] = NOT_PRESENT;
+	}
+
+	//Fill the first page table with nonpresent pages
+	for(i = 0; i < NUM_ENTRIES; i++){
+			first_page_table[i] = ((i * 0x1000) | NOT_PRESENT) | GLOBAL;
+			user_vid_mem[i] = ((0xB8000) | NOT_PRESENT) | GLOBAL;
+	}
+
+	// fill page with video memory
+	first_page_table[VIDEO_MEM_IDX] |= PRESENT_SUPERVISOR;
+	user_vid_mem[0] |= PRESENT_UNSUPERVISED;
+
+	//Generic page directory initialization.
+	page_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	page_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+
+	//These are the six static User Program page blocks.
+	user_1_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_1_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_1_dir[USER_VIRT_IDX] = ((FOUR_MB*2) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_1_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	user_2_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_2_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_2_dir[USER_VIRT_IDX] = ((FOUR_MB*3) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_2_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	user_3_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_3_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_3_dir[USER_VIRT_IDX] = ((FOUR_MB*4) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_3_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	user_4_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_4_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_4_dir[USER_VIRT_IDX] = ((FOUR_MB*5) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_4_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	user_5_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_5_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_5_dir[USER_VIRT_IDX] = ((FOUR_MB*6) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_5_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	user_6_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	user_6_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	user_6_dir[USER_VIRT_IDX] = ((FOUR_MB*7) | PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+	user_6_dir[USER_VID_IDX] = ((unsigned int) user_vid_mem) | PRESENT_UNSUPERVISED;
+
+	// Set control registers to enable paging and enable 4MB paging
+	// Sets CR3 (PDBR) to use the generalized page_dir
+	// Last 3 command lines are there to enable global paging (global entries that are not flushed from the TLB)
+	asm volatile("movl %0, %%eax\n\
+		 movl %%eax, %%cr3\n\
+		 movl %%cr4, %%eax\n\
+ 		 orl $0x00000010, %%eax\n\
+ 		 movl %%eax, %%cr4\n\
+		 movl %%cr0, %%eax\n\
+		 orl $0x80000000, %%eax\n\
+		 movl %%eax, %%cr0\n\
+		 movl %%cr4, %%eax\n\
+ 		 orl $0x00000080, %%eax\n\
+ 		 movl %%eax, %%cr4"
+		 :
+		 : "r" (page_dir)
+		 : "%eax","cc", "memory"
+		 );	
+
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//THE FOLLOWING PROGRAMS HAVE BEEN MOTHBALLED FOR DYNAMIC PAGE ALLOCATION//
+///////////////////////////////////////////////////////////////////////////
+
+/*
+ *	create_process_page
+ *   DESCRIPTION: Maps 128MB to the correct physical address for a new pid.
+ *   INPUTS: pid -- The process id of the new process that needs to access its memory.
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 on success (always)
+ *   SIDE EFFECTS: Flushes TLB
+ */  
+int create_process_page(int pid){
+
+	//Make sure to add it to the page_dir_array depending on PID
+	//Modify get_new_pid to just return lowest unused instead of checking it out?
+	uint32_t dyn_page_dir[1024] __attribute__((aligned(4096)));
+	page_dir_array[pid] = dyn_page_dir;
+
+	int i;
+	for(i = 0; i < NUM_ENTRIES; i++){
+		dyn_page_dir[i] = NOT_PRESENT;
+	}
+
+	//Fill the first page table with nonpresent pages
+	for(i = 0; i < NUM_ENTRIES; i++){
+			first_page_table[i] = ((i * 0x1000) | NOT_PRESENT) | GLOBAL;
+	}
+
+	//Fill the video memory.
+	first_page_table[VIDEO_MEM_IDX] |= PRESENT_SUPERVISOR;
+
+ 	// Physical location at 8MB + (4MB * process id)
+	int phys_mem = 0x800000 + (0x400000 * pid);	
+
+	dyn_page_dir[0] = ((unsigned int) first_page_table) | PRESENT_SUPERVISOR;
+	dyn_page_dir[1] = ((KERNEL_LOC | PRESENT_SUPERVISOR) | GLOBAL) | MB_PAGE_BIT;
+	dyn_page_dir[USER_VIRT_IDX] = (phys_mem| PRESENT_UNSUPERVISED) | MB_PAGE_BIT;
+
+ 	//Flush TLB
+	asm volatile("movl %%cr3, %%eax\n\
+		 movl %%eax, %%cr3"
+		 :
+		 :
+		 : "%eax", "memory"
+		 );	
+
+	return 0;
+}
+
+
+/*
+ *	switch_process_pde
+ *   DESCRIPTION: Switches out the mapping for virtual address of 128MB to the correct physical mapping for the given pid.
+ *					(used for context switching)
+ *   INPUTS: pid -- The process id of the new process that needs to access its memory.
+ *   OUTPUTS: none
+ *   RETURN VALUE: -1 on invalid pid, 0 on success
+ *   SIDE EFFECTS: Flushes TLB
+ */  
+
+int switch_process_pde(int pid){
+ 
+	//Must do pid checking here!
+	if(check_pid(pid) == -1)
+		return -1;
+
+	// Go change the Page Directory Entry for the given PID
+	int retval = create_process_page(pid);
+
+	return retval;
+}
+

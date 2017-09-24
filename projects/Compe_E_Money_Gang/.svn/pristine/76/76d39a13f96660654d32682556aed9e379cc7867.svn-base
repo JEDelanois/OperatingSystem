@@ -1,0 +1,293 @@
+#include "mouse.h"
+#include "lib.h"
+#include "x86_desc.h" 
+#include "i8259.h"
+#include "wrapper.h"
+#include "idt.h"
+#include "sound.h"
+
+//global variables for coordinates of the mouse
+int mouse_x, mouse_x_absolute;
+int mouse_y, mouse_y_absolute;
+int mouse_other, mouse_count;
+int normal_cursor = 0;
+int old_mouse_x = 40;
+int old_mouse_y = 12;
+int enable_mouse = 0;
+
+/*Mouse initialization, read, and wait code mirrored from OsDev
+  by SANiK at http://forum.osdev.org/viewtopic.php?t=10247*/
+
+/*
+ * init_mouse
+ *   DESCRIPTION: initializes the mouse
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */  
+void init_mouse(){
+	set_intrpt_gate_desc(IRQ12);				//update idt struct
+	SET_IDT_ENTRY(idt[IRQ12], mouse_wrapper);	//set table and offsets from struct
+
+	//enable aux input
+	m_wait(1);
+	outb(0xA8, 0x64);
+
+	//send command byte to 0x64 for mouse use
+	m_wait(1);
+	outb( 0x20, 0x64);				
+	
+	//modify the status byte by setting and clearing bits
+	m_read();
+	char status = inb(MOUSE_PORT);		
+	status = (status | 0x2);		
+	status = (status & 0xEF);		
+
+	//send command to 0x64
+	m_wait(1);
+	outb(0x60, 0x64);				
+	
+	//send status bit back to mouse port
+	m_wait(1);			
+	outb(status, MOUSE_PORT);				
+	
+	//tell mouse to use default settings
+	m_wait(0);
+	outb(0xF6, MOUSE_PORT);	
+	while(inb(MOUSE_PORT) != 0xFA)		//wait for ACK
+		{}
+		
+	//enable packets
+	m_wait(0);
+	outb(0xF4, MOUSE_PORT);				
+	while(inb(MOUSE_PORT) != 0xFA)		//wait for ACK
+		{}
+		
+	//initialize global variables so the mouse starts in the middle of the screen
+	mouse_count = 0;					//packet count starts at 0
+	mouse_x_absolute = 40;				//half width of the screen
+	mouse_y_absolute = 12;				//half length of the screen
+	
+}
+
+/*
+ * m_wait
+ *   DESCRIPTION: waits until port (0x64) or the mouse port (0x60) is ready to be written to
+ *   INPUTS: type - 0 means waiting to write to mouse port
+					1 means waiting to write to port (0x64)
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */  
+void m_wait(int type) {
+
+	//wait for port 0x60
+	if(type == 0) {
+		while((inb(0x64) & 0x2) != 0)	//wait for bit 1 to be cleared
+			{}
+		outb(0xD4, 0x64);				//send control word to 0x64 to signal a mouse write
+		return;
+	}
+	//wait for port 0x64
+	else {		
+		while((inb(0x64) & 0x2) != 0)	//wait for bit 1 to be cleared
+		{}			
+		 }
+
+}
+
+/*
+ * m_read
+ *   DESCRIPTION: waits until port the mouse port (0x60) is ready to be read
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: none
+ */ 
+void m_read() {
+
+	while((inb(0x64) & 0x1) != 1)	//wait for bit 0 to be set
+		{}
+
+}
+
+/*
+ * mouse_handler
+ *   DESCRIPTION: reads packets from the mouse port and changes mouse info accordingly
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: global mouse values are changed depending mouse movement/presses
+ */ 
+void mouse_handler(){
+
+send_eoi(12);
+
+char mouse_int, mouse_byte;
+		
+	//wait until mouse is ready to be read
+	m_read();
+	mouse_int = inb(0x64);					//check if interrupt is from the mouse
+	if((mouse_int & (0x20)) == 0)		
+		return;
+		
+		
+	//get mouse packets		(only one packet can be read in per interrupt)
+	mouse_byte = inb(MOUSE_PORT);
+	switch(mouse_count){
+	
+		//packet 0 gives various mouse information
+		case 0:
+			mouse_other = mouse_byte;
+			mouse_count++;
+			return;
+			
+		//packet 1 gives x coordinate info
+		case 1:
+			mouse_x = mouse_byte;
+			mouse_x = mouse_x/7;		//make less sensitive
+			mouse_count++;
+
+			break;
+			
+		//packet 2 gives y coordinate info
+		case 2:
+			mouse_y = mouse_byte;
+			mouse_y = -mouse_y;
+			mouse_y = mouse_y/7;			//make less sensitive
+			mouse_count = 0;
+			break;
+		
+	}
+	
+	//only change the cursor after all 3 packets have been sent
+	if(mouse_count == 0) {
+	
+	//temporary variables to hold current screen data
+	int tempx = screen_x;
+	int tempy = screen_y;
+	
+	//update screen with actual mouse values
+	screen_x = mouse_x + mouse_x_absolute;
+	screen_y = mouse_y + mouse_y_absolute;
+	
+	
+	//make sure mouse is within bounds
+	if(screen_x < 0)
+		screen_x = 0;
+		
+	if(screen_x >= 80)
+		screen_x = 79;
+		
+	if(screen_y < 0)
+		screen_y = 0;
+		
+	if(screen_y >= 25)
+		screen_y = 24;
+		
+		
+	//update absolute values of global mouse coordinates
+	mouse_x_absolute = screen_x;
+	mouse_y_absolute = screen_y;
+	
+	//change VGA to show cursor
+	mouse_cursor_helper(mouse_x_absolute, mouse_y_absolute);
+	
+	//Check for mouse clicks to play sound
+	uint8_t tmp = mouse_other & 0x2;	//right button
+	if( tmp) {
+		stop_sound();
+		sound_freq = 500;	//reset frequency when sound is stopped
+	}
+	
+	tmp = mouse_other & 0x1;	//left button
+	if( tmp){
+		realsound();
+		}
+		
+	tmp = mouse_other & 0x4;	//middle button
+	if( tmp){
+		sound_freq += 200;
+		}
+		
+	//restore screen_x and screen_y
+	screen_x = tempx;
+	screen_y = tempy;
+	
+	}
+	return;
+}
+
+/*
+ * mouse_handler
+ *   DESCRIPTION: manages the cursor for the mouse. gives 80x30 coordinates, not by pixel
+ *   INPUTS: abs_x - x coordinate of cursor on screen
+			 abs_y - y coordinate of cursor on screen
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: changes video memory
+ */ 
+// 
+void mouse_cursor_helper(int abs_x, int abs_y){
+
+
+	//Grab the color of the text
+	outb(0x07, 0x03C7);							
+	char temp_text_r = inb(0x03C9);
+	char temp_text_g = inb(0x03C9);
+	char temp_text_b = inb(0x03C9);
+
+	//Grab the color of the background
+	outb(0x00, 0x03C7);							
+	char temp_back_r = inb(0x03C9);
+	char temp_back_g = inb(0x03C9);
+	char temp_back_b = inb(0x03C9);
+
+	//Calculate the inverted color for both text and background
+	char inv_text_r = 0x3F - temp_text_r;		
+	char inv_text_g = 0x3F - temp_text_g;
+	char inv_text_b = 0x3F - temp_text_b;
+
+	char inv_back_r = 0x3F - temp_back_r;
+	char inv_back_g = 0x3F - temp_back_g;
+	char inv_back_b = 0x3F - temp_back_b;
+
+	//Change the cursor attributes to new inverted color
+	outb(0x02, 0x3C8);							
+	outb(inv_text_r, 0x3C9);
+	outb(inv_text_g, 0x3C9);
+	outb(inv_text_b, 0x3C9);
+
+	outb(0x01, 0x03C8);
+	outb(inv_back_r, 0x3C9);
+	outb(inv_back_g, 0x3C9);
+	outb(inv_back_b, 0x3C9);
+
+
+	//Restore the attribute registers of the block we just left
+	int old_coord_y = old_mouse_y * NUM_COLS * 2;
+	int old_coord_x = old_mouse_x * 2;
+
+	*(uint8_t *)(DIRECT_VID + old_coord_y + old_coord_x + 1) = 0x07;
+
+
+	//Write the attribute register of the block we just entered
+	int new_coord_y = abs_y * NUM_COLS * 2;
+	int new_coord_x = abs_x * 2;
+
+	if(normal_cursor == 0)
+		*(uint8_t *)(DIRECT_VID + new_coord_y + new_coord_x + 1) = 0x70;
+	else
+		*(uint8_t *)(DIRECT_VID + new_coord_y + new_coord_x + 1) = 0x12;
+
+	//Record the new location of the mouse
+	old_mouse_x = abs_x;
+	old_mouse_y = abs_y;
+
+}
+
+
+
+
+

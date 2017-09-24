@@ -1,0 +1,91 @@
+#include "context_switch.h"
+
+/* This file includes any functions or structures that are needed for context switching, as well
+as the **TENTATIVE** pid array. */
+
+///NOTE: MAKE SURE TO INCLUDE THE SCHEDULING INFORMATION HERE
+
+
+//Initialize the pid array to all zero. (zero means not in use, 1 signifies in use)
+//Technically should be an array size of 32,768 however that uses up too much memory (we only have 6 programs)
+int pid_array[NUM_PID] = { 0 };
+
+
+/*
+ * check_pid
+ *   DESCRIPTION: Checks if the given process ID is in use.
+ *   INPUTS: pid -- the process ID to be checked if it is in use or not.
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 if the pid exists, and -1 if it does not exist
+ *   SIDE EFFECTS: none
+ */   
+int check_pid(int pid){
+
+	if(pid_array[pid] == 1)
+		return 0;
+
+	return -1;
+
+}
+
+
+/*
+ * new_pid_checkout
+ *   DESCRIPTION: Checks out the lowest unused pid for use. (Only use in execute!)
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: the pid that was set to "in use", or -1 for no available process IDs.
+ *   SIDE EFFECTS: none
+ */   
+int new_pid_checkout(){
+
+	int i;
+
+	for(i = 0; i < NUM_PID; i++)
+		if(pid_array[i] == 0){
+			pid_array[i] = 1;
+			return i;
+		}
+
+	return -1;
+}
+
+
+/*
+ * get_new_pid
+ *   DESCRIPTION: Returns the lowest unused pid (DOES NOT CHECK IT OUT FOR USE) i.e. sequential calls
+ *					will return the same value.
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: the lowest value pid that is not in use, or -1 for no available process IDs.
+ *   SIDE EFFECTS: none
+ */   
+int get_new_pid(){
+
+	int i;
+
+	for(i = 0; i < NUM_PID; i++)
+		if(pid_array[i] == 0)
+			return i;
+
+	return -1;
+}
+
+
+/*
+ * remove_pid
+ *   DESCRIPTION: Sets the pid to unused in the pid array
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 on success, -1 if the pid is already 0
+ *   SIDE EFFECTS: none
+ */  
+int remove_pid(int pid){
+
+	if(pid_array[pid] == 1){
+		pid_array[pid] = 0;
+		return 0;
+	}
+
+	return -1;
+}

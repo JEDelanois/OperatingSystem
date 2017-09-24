@@ -1,0 +1,53 @@
+boot.o: boot.S multiboot.h x86_desc.h types.h
+context_helper.o: context_helper.S
+system_jump_table.o: system_jump_table.S
+wrapper.o: wrapper.S
+x86_desc.o: x86_desc.S x86_desc.h types.h
+context_switch.o: context_switch.c context_switch.h paging.h types.h \
+  idt.h x86_desc.h wrapper.h i8259.h process_data.h file_descriptor.h \
+  terminal_driver.h lib.h keyboard.h dentry.h rtc.h mouse.h sound.h
+exception_handlers.o: exception_handlers.c system_call_handler.h types.h \
+  dentry.h file_descriptor.h rtc.h process_data.h x86_desc.h \
+  terminal_driver.h lib.h context_switch.h keyboard.h mouse.h \
+  exception_handlers.h i8259.h
+filesys_driver.o: filesys_driver.c filesys_driver.h types.h \
+  file_descriptor.h dentry.h process_data.h x86_desc.h terminal_driver.h \
+  lib.h context_switch.h keyboard.h
+i8259.o: i8259.c i8259.h types.h lib.h process_data.h x86_desc.h \
+  file_descriptor.h terminal_driver.h keyboard.h dentry.h \
+  context_switch.h
+idt.o: idt.c x86_desc.h types.h lib.h process_data.h file_descriptor.h \
+  terminal_driver.h keyboard.h dentry.h context_switch.h idt.h i8259.h \
+  wrapper.h exception_handlers.h rtc.h system_call_handler.h mouse.h \
+  system_jump_table.h sound.h
+kernel.o: kernel.c multiboot.h types.h x86_desc.h lib.h process_data.h \
+  file_descriptor.h terminal_driver.h keyboard.h dentry.h \
+  context_switch.h idt.h i8259.h debug.h paging.h rtc.h filesys_driver.h \
+  system_call_handler.h mouse.h sound.h
+keyboard.o: keyboard.c lib.h types.h process_data.h x86_desc.h \
+  file_descriptor.h terminal_driver.h keyboard.h dentry.h \
+  context_switch.h i8259.h wrapper.h idt.h system_call_handler.h rtc.h \
+  mouse.h
+lib.o: lib.c lib.h types.h process_data.h x86_desc.h file_descriptor.h \
+  terminal_driver.h keyboard.h dentry.h context_switch.h mouse.h
+mouse.o: mouse.c mouse.h lib.h types.h process_data.h x86_desc.h \
+  file_descriptor.h terminal_driver.h keyboard.h dentry.h \
+  context_switch.h i8259.h wrapper.h idt.h sound.h
+paging.o: paging.c paging.h types.h context_switch.h lib.h process_data.h \
+  x86_desc.h file_descriptor.h terminal_driver.h keyboard.h dentry.h
+process_data.o: process_data.c process_data.h x86_desc.h types.h \
+  file_descriptor.h terminal_driver.h lib.h context_switch.h keyboard.h \
+  dentry.h paging.h
+rtc.o: rtc.c lib.h types.h process_data.h x86_desc.h file_descriptor.h \
+  terminal_driver.h keyboard.h dentry.h context_switch.h i8259.h \
+  wrapper.h idt.h rtc.h
+sound.o: sound.c sound.h types.h idt.h lib.h process_data.h x86_desc.h \
+  file_descriptor.h terminal_driver.h keyboard.h dentry.h \
+  context_switch.h
+system_call_handler.o: system_call_handler.c system_call_handler.h \
+  types.h dentry.h file_descriptor.h rtc.h process_data.h x86_desc.h \
+  terminal_driver.h lib.h context_switch.h keyboard.h mouse.h paging.h \
+  filesys_driver.h context_helper.h
+terminal_driver.o: terminal_driver.c terminal_driver.h lib.h types.h \
+  process_data.h x86_desc.h file_descriptor.h dentry.h context_switch.h \
+  keyboard.h filesys_driver.h sound.h

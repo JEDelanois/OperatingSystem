@@ -1,0 +1,57 @@
+#ifndef _PROCESS_DATA_H
+#define _PROCESS_DATA_H
+
+#include "x86_desc.h"
+#include "file_descriptor.h"
+#include "terminal_driver.h"
+#include "dentry.h"
+
+#define KEYBOARD_BUFF_SIZE 128
+#define FILE_DESCRIP_ARRAY_SIZE 8
+
+//The entire PCB, housing all required process data.
+typedef struct PCB_struct {
+	int pid;
+	uint32_t* execute_ebp;
+	uint32_t* user_stack_ptr;
+	uint32_t* kernel_stack_ptr;
+	uint32_t* curr_page_dir;
+	struct PCB_struct* parent_PCB_ptr;
+	uint32_t* parent_page_dir;
+	uint32_t* parent_kernel_stack;
+	file_entry_t file_array[FILE_DESCRIP_ARRAY_SIZE];
+	uint8_t arguments[KEYBOARD_BUFF_SIZE];		//We assume no more than 15 arguments. Check with TA.
+
+} PCB_struct_t;
+
+#define VIRT_USER_MEM 0x8000000		//128MB
+#define END_KERNEL_MEM 0x800000		//8MB
+#define KERNEL_STACK_SIZE 0x2000	//8KB
+
+//Process data manipulation functions:
+
+//creates a new process structure. Requires a pointer to the parent PCB and all the arguments that
+//were passed in when the process was called with execute.
+extern PCB_struct_t* create_PCB(PCB_struct_t * parent_PCB, uint8_t* args);
+
+/* Removes a PCB from use, used when a process needs to be squashed. */
+extern int remove_PCB(int pid);
+
+/* Returns the address of the current PCB based off of the TSS information. */
+PCB_struct_t* get_PCB();
+
+//sets entire file array at initilization
+int32_t set_file_array(PCB_struct_t* pcb);
+
+//sets the stdin file arrray entry
+int32_t stdin_set(PCB_struct_t* pcb);
+
+//sets the stdout file array
+int32_t stdout_set(PCB_struct_t* pcb);
+
+//clears all 2-7 indexes
+int32_t clear_file_array(PCB_struct_t* pcb);
+
+
+#endif /* _PROCESS_DATA_H */
+

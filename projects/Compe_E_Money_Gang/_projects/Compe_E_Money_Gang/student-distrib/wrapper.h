@@ -1,0 +1,36 @@
+
+#ifndef _WRAPPER_H
+#define _WRAPPER_H
+
+// wrapper for keyboard
+extern void keyboard_wrapper();
+
+// wrapper for rtc
+extern void rtc_wrapper();
+
+// wrapper for mouse
+extern void mouse_wrapper();
+
+// wrapper for context switching
+extern void context_wrapper();
+
+// exception wrappers
+extern void divideErrorWrapper();
+extern void nmiIntWrapper();
+extern void breakPointWrapper();
+extern void overflowWrapper();
+extern void rangeExceedWrapper();
+extern void invalidOpWrapper();
+extern void deviceNotAvailWrapper();
+extern void doubleFaultWrapper();
+extern void invalidTSSWrapper();
+extern void segNotPresentWrapper();
+extern void stackSegFaultWrapper();
+extern void genProtectionWrapper();
+extern void pageFaultWrapper();
+extern void floatErrorWrapper();
+extern void alignCheckWrapper();
+extern void machineCheckWrapper();
+extern void floatSIMDWrapper();
+
+#endif /* _WRAPPER_H */

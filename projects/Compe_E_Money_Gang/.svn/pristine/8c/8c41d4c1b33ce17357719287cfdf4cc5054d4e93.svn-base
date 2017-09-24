@@ -1,0 +1,278 @@
+#include "terminal_driver.h"
+#include "lib.h"
+
+#define TOTAL_HIST 10
+#define UP_BUTTON 72
+#define DOWN_BUTTON 80
+
+
+volatile int reading = 0;
+
+// test harness variable
+int goOn = 0;
+//rolling buffer for command line
+uint8_t comand_his[TOTAL_HIST][KEY_BUFF_SIZE+1];
+int Hidx_start = 0;
+int Hnum = 0;
+int Hcurr = 0;
+
+/*//buffer index
+int buffIdx = -1;*/
+
+func_ptr stdin_func_table[3] = { (func_ptr)terminal_error_open, (func_ptr)terminal_read, (func_ptr)terminal_error_write }; 
+func_ptr stdout_func_table[3] = { (func_ptr)terminal_error_open, (func_ptr)terminal_error_read, (func_ptr)terminal_write }; 
+func_ptr terminal_func_table[3] = { (func_ptr)terminal_open, (func_ptr)terminal_read, (func_ptr)terminal_write }; 
+
+int32_t terminal_open(file_entry_t * file_desc_entry, dentry_t * dentry){
+	
+		file_desc_entry->fop_table_ptr = terminal_func_table;	//file op table pointer (function pointer)
+		file_desc_entry->inode_ptr = '\0';
+		file_desc_entry->file_pos = 0;
+		file_desc_entry->flags = 1;
+	
+	
+	
+		return 0;
+}
+
+int32_t stdin_open_file(file_entry_t * file_desc_entry, dentry_t * dentry){
+	
+		file_desc_entry->fop_table_ptr = stdin_func_table;	//file op table pointer (function pointer)
+		file_desc_entry->inode_ptr = '\0';
+		file_desc_entry->file_pos = 0;
+		file_desc_entry->flags = 1;
+		
+	return 0;
+}
+
+int32_t stdout_open_file(file_entry_t * file_desc_entry, dentry_t * dentry){
+	
+		file_desc_entry->fop_table_ptr = stdout_func_table;	//file op table pointer (function pointer)
+		file_desc_entry->inode_ptr = '\0';	
+		file_desc_entry->file_pos = 0;
+		file_desc_entry->flags = 1;
+		
+	return 0;
+}
+int32_t terminal_close(){
+		/*
+		clear any terminal specific value
+		*/
+		clear();
+		return 0;
+}
+
+int32_t terminal_write(const uint8_t* buf, int32_t nbytes)
+{
+	int idx;
+	for (idx = 0; idx < nbytes; idx++)
+	{
+		// skip over null characters when printing
+		if (buf[idx] == '\0')
+			continue;
+		putc(buf[idx]);
+	}
+	return idx;
+}
+
+int32_t terminal_error_read(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t nbytes){
+return -1;
+}
+
+int32_t terminal_error_write(const void* buf, int32_t nbytes){
+return -1;
+}
+
+int32_t terminal_error_open(file_entry_t * file_desc_entry, dentry_t * dentry){
+return -1;
+}
+
+//always should read in the whole buffer so 
+//size shouldbe 128 bytes or history wont work
+/*
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+you should never type in terminal unless terminal read 
+is being called or else we might run into errors with
+the enter
+*/
+int32_t terminal_read(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t nbytes)
+{
+	PCB_struct_t* pcb;
+	pcb = get_PCB();
+	reading = 1;
+	uint32_t bytes_read;
+	int a;
+	//increment the number of entries up to 9
+	if(Hnum < (TOTAL_HIST -1))
+		Hnum++;
+	//else make the begining of the list the next 
+	//index to support the rolling buffer
+	else
+		Hidx_start = (Hidx_start+1)%TOTAL_HIST;
+		
+	while(enter_state == 0){
+	//wait and do nothing
+	}
+	//reset the enter state
+	enter_state = 0;
+	
+	//copy buffer into buffer passed and save into command hist
+	for(a = 0; (a < (buffIdx + 1))  && (a < nbytes); a++){
+		comand_his[(Hidx_start + Hnum)%TOTAL_HIST][a]= buff[a] = keyboard_buff[a];
+	}
+	bytes_read = a;
+	
+	//clears the keyboard buffer and reaset the index
+	for(a = 0; a <= buffIdx; a++){
+		keyboard_buff[a] = (char)0;
+	}
+	
+	buffIdx = -1;
+	//if you get here then enter has been pressed
+	//and the curr for the history should
+	//always begin at the start of this history
+	Hcurr = (Hidx_start + Hnum)%TOTAL_HIST;
+	reading = 0;
+	return bytes_read;
+}
+
+/*
+ERROR HERE NEED TO FIX HISTORY THERE IS A BAD BUG
+because of this functjion we need to include the 
+terminal_driver.h file in the keyboard handler
+and both files are included int the opsoste file is thisa
+a problem??
+*/
+void acess_history(int dir){
+	int i;
+	
+	
+	if(dir == UP_BUTTON){
+		// first delete the characters off the screen
+		for(i = 0; i <= buffIdx; i++)
+			deleteChar();
+		//reset buff index
+		buffIdx = -1;
+		//display the history command on the screen
+		display_hist(&comand_his[Hcurr%TOTAL_HIST][0]);
+		Hcurr = (Hcurr - 1)%TOTAL_HIST;
+	}
+	
+	else{
+		// first delete the characters off the screen
+		for(i = 0; i <= buffIdx; i++)
+			deleteChar();
+		//reset buff index
+		buffIdx = -1;
+		//get to previouse history
+		Hcurr = (Hcurr+2)%TOTAL_HIST;
+		display_hist(&comand_his[Hcurr%TOTAL_HIST][0]);
+		//prime it for the next acces history call
+		Hcurr = (Hcurr -1)%TOTAL_HIST;
+		
+	}
+		
+
+}
+
+void display_hist(uint8_t * string){
+	int i;
+	for(i = 0; string[i] != '\0'; i++){
+		//print char to keyboard
+		keyboardToScreen(string[i]);
+		keyboard_buff[i] = string[i];
+		
+	}
+}
+
+// int32_t terminal_read(char * string){
+// 		/*
+// 		reads bytes into terminal buffer 
+// 		*/
+// 		//if delete then delete only works for deletes from keyboard
+// 		//will not work for delets in the middle of the string
+// 		int i,a;
+		
+		
+		
+// 		if(string[0] ==  (char)127){
+// 			//if not at the beginning then delete 
+// 			if((buffIdx != -1)){
+// 				keyboard_buff[buffIdx] = (char)0;
+// 				buffIdx--;
+// 			}
+// 		}
+		
+// 		//handles case with 127 characters and enter push at the end
+// 		else if(string[0] == '\n'){
+// 					//MAKE FUNCTION CALL HERE TO HANDLE ENTERED COMMAND
+
+// 					// test code for checkpoint 2
+// 					int8_t * test = "continue";
+// 					if (!strncmp(test, (int8_t *)keyboard_buff, strlen(test)+1))
+// 						goOn = 1;
+// 					else
+// 						printf("\nType continue to go on: ");
+					
+// 					//this part clears the buffer
+// 					for(a = 0; a <= buffIdx; a++){
+// 						keyboard_buff[a] = (char)0;
+// 					}
+// 					buffIdx = -1;
+// 		}
+		
+// 		else {
+// 			//for all letters in string or untill buffer full
+// 			for(i = 0;(string[i] != '\0') && (buffIdx < (KEY_BUFF_SIZE-1)); i++){
+// 				if(string[i] == '\n'){
+// 					//MAKE FUNCTION CALL HERE TO HANDLE ENTERED COMMAND
+					
+// 					//this part clears the buffer
+// 					for(a = 0; a <= buffIdx; a++){
+// 						keyboard_buff[a] = (char)0;
+// 					}
+// 					buffIdx = -1;
+// 				}
+				
+// 				else{
+// 					//increment buffer position
+// 					buffIdx++;
+// 					//copy character
+// 					keyboard_buff[buffIdx] = string[i];
+// 				}
+// 			}
+// 		}
+		
+// 		//printf("\n BUFFER:%s \n INDEX:%d\n",keyboard_buff,buffIdx);
+// 		return 0;
+// }
+
+// int32_t terminal_write(char * string){
+// 		/*
+// 		writes count bytes to terminal screen
+// 		keep track of verticle scrolling
+// 		*/
+// 		int i;
+		
+// 		//if delete then delete
+// 		if(string[0] ==  (char)127){
+// 			if(buffIdx != -1)
+// 				deleteChar();
+// 		}
+		
+// 		else {
+// 			for(i = 0;(string[i] != '\0') && (buffIdx < (KEY_BUFF_SIZE-1)); i++){
+// 				printf("%c",string[i]);
+// 			}
+// 		}
+// 		//printf(" \nINDEX:%d\n",buffIdx);
+// 		return 0;
+// }
+
+// void test_terminal_read()
+// {
+// 	printf("\nType continue to go on: ");
+// 	while (!goOn);
+// 	goOn = 0;
+// 	clear();
+// }

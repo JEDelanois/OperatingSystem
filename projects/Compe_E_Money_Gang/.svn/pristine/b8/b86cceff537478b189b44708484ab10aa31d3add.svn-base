@@ -1,0 +1,46 @@
+#ifndef _TERMINAL_DRIVER_H
+#define _TERMINAL_DRIVER_H
+
+#include "lib.h"
+#include "keyboard.h"
+#include "dentry.h"
+#include "file_descriptor.h"
+#include "process_data.h"
+
+extern volatile int reading;
+
+int32_t terminal_open(file_entry_t * file_desc_array, dentry_t * dentry);
+
+int32_t terminal_close();
+
+// int32_t terminal_read(char * string);
+
+// int32_t terminal_write(char * string);
+
+// // test harness for terminal read
+// void test_terminal_read();
+
+int32_t terminal_write(const uint8_t* buf, int32_t nbytes);
+
+int32_t terminal_read(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t nbytes);
+
+void acess_history(int dir);
+
+void display_hist(uint8_t * string);
+
+int32_t terminal_error_read(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t nbytes);
+
+
+int32_t terminal_error_write(const void* buf, int32_t nbytes);
+
+
+int32_t terminal_error_open(file_entry_t * file_desc_entry, dentry_t * dentry);
+
+
+int32_t stdin_open_file(file_entry_t * file_desc_entry, dentry_t * dentry);
+
+
+int32_t stdout_open_file(file_entry_t * file_desc_entry, dentry_t * dentry);
+
+#endif /* _TERMINAL_DRIVER_H */
+

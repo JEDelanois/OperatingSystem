@@ -1,0 +1,28 @@
+#ifndef _SYSTEM_CALL_HANDLER_H
+#define _SYSTEM_CALL_HANDLER_H
+#include "types.h"
+#include "dentry.h"
+#include "file_descriptor.h"
+#include "rtc.h"
+
+int32_t halt_handler(uint8_t status);
+int32_t execute_handler(const uint8_t* command);
+int32_t read_handler(int32_t fd, void* buf, int32_t nbytes);
+int32_t write_handler(int32_t fd, const void* buf, int32_t nbytes);
+int32_t open_handler(const uint8_t* filename);
+int32_t close_handler(int32_t fd);
+int32_t getargs_handler(uint8_t* buf, int32_t nbytes);
+int32_t vidmap_handler(uint8_t** screen_start);
+int32_t set_handler_handler(int32_t signum, void* handler_address);
+int32_t sigreturn_handler(void); 
+
+int32_t stdin_open();
+int32_t stdout_open();
+int32_t rm_white_space(const uint8_t* buff, int idx, int size);
+
+	//file system function pointers
+	typedef int32_t (*open_func)(file_entry_t * file_desc_array, dentry_t * dentry);
+	typedef int32_t (*read_func)(uint32_t fd, uint8_t* buff, uint32_t offset, uint32_t length);
+	typedef int32_t (*write_func)(const void* buf, int32_t nbytes);
+
+#endif /* _SYSTEM_CALL_HANDLER_H */

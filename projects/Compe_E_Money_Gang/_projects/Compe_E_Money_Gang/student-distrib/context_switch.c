@@ -1,0 +1,439 @@
+#include "context_switch.h"
+#include "paging.h"
+#include "idt.h"
+#include "x86_desc.h" 
+#include "wrapper.h"
+#include "i8259.h"
+#include "process_data.h"
+#include "rtc.h"
+#include "mouse.h"
+#include "lib.h"
+#include "sound.h"
+
+
+
+/* This file includes any functions or structures that are needed for context switching */
+
+//Initialize the pid array to all zero. (zero means not in use, 1 signifies in use)
+//Technically should be an array size of 32,768 however that uses up too much memory (we only have 6 programs)
+int pid_array[NUM_PID] = { 0 };
+
+//x's, y's, no_new_line's, and caps_mode's for each shell
+int x_of_term[3];	
+int y_of_term[3];	
+int no_new_line[3];	
+int caps_mode[3];	
+
+//colors for each shell (initialized to normal colors)
+char red_text[3] = { 0x28, 0x28, 0x28 };
+char blue_text[3] = { 0x28, 0x28, 0x28 };
+char green_text[3] = { 0x28, 0x28, 0x28 };
+char red_back[3] = { 0x00, 0x00, 0x00 };
+char blue_back[3] = { 0x00, 0x00, 0x00 };
+char green_back[3] = { 0x00, 0x00, 0x00 };
+
+
+
+/*
+ * check_pid
+ *   DESCRIPTION: Checks if the given process ID is in use.
+ *   INPUTS: pid -- the process ID to be checked if it is in use or not.
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 if the pid exists, and -1 if it does not exist
+ *   SIDE EFFECTS: none
+ */   
+int check_pid(int pid){
+
+	if(pid_array[pid] == 1)	
+		return 0;
+
+	return -1;
+
+}
+
+
+/*
+ * new_pid_checkout
+ *   DESCRIPTION: Checks out the lowest unused pid for use. (Only use in execute!)
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: the pid that was set to "in use", or -1 for no available process IDs.
+ *   SIDE EFFECTS: none
+ */   
+int new_pid_checkout(){
+
+	int i;
+
+	for(i = 0; i < NUM_PID; i++)
+		if(pid_array[i] == 0){
+			pid_array[i] = 1;
+			return i;
+		}
+
+	return -1;
+}
+
+
+/*
+ * get_new_pid
+ *   DESCRIPTION: Returns the lowest unused pid (DOES NOT CHECK IT OUT FOR USE) i.e. sequential calls
+ *					will return the same value.
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: the lowest value pid that is not in use, or -1 for no available process IDs.
+ *   SIDE EFFECTS: none
+ */   
+int get_new_pid(){
+
+	int i;
+
+	for(i = 0; i < NUM_PID; i++)
+		if(pid_array[i] == 0)
+			return i;
+
+	return -1;
+}
+
+
+/*
+ * remove_pid
+ *   DESCRIPTION: Sets the pid to unused in the pid array
+ *   INPUTS: pid - pid to be removed
+ *   OUTPUTS: none
+ *   RETURN VALUE: 0 on success, -1 if the pid is already 0
+ *   SIDE EFFECTS: none
+ */  
+int remove_pid(int pid){
+
+	if(pid_array[pid] == 1){
+		pid_array[pid] = 0;
+		return 0;
+	}
+
+	return -1;
+}
+
+
+/*
+ * switch_shell
+ *   DESCRIPTION: Switches video memory and process data for scheduling and terminal switches
+ *   INPUTS: old_shell - number of the pid of the shell we are switching from
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Switches video memory pointers for both shells
+ */  
+void switch_shell(int old_shell) {
+
+int i;
+PCB_struct_t* temp_PCB;
+PCB_struct_t* curr_PCB = get_PCB();						//PCB of the current running process
+PCB_struct_t* new_PCB = get_PCB_via_pid(shell_pid);		//PCB of the shell we are switching to
+PCB_struct_t* old_PCB = get_PCB_via_pid(old_shell);		//PCB of the shell we are switching from
+
+	//just return if we are switching to the same shell
+	if(shell_pid == old_shell)
+		return;
+
+	//Switch out the caps lock
+	caps_mode[old_shell] = capital_mode;
+	capital_mode = caps_mode[shell_pid];
+
+	//Properly switch out the RGB values for the corresponding terminals
+	RGB_switch_helper(old_shell);
+		
+	//Switch out the contents of both the private and public video memories
+	// need to switch out cr3 since each program has its own pagetables now
+	
+	//change CR3 so we can save the video memory of the old shell into its own virtual memory
+	asm volatile("movl %0, %%eax\n\
+		 movl %%eax, %%cr3\n"
+		 :
+		 : "r" (old_PCB->curr_page_dir) 
+		 : "%eax", "memory"
+		 );
+	
+	//					dest				source
+	memcpy((uint8_t*) FAKE_VID_MEM, (uint8_t*) DIRECT_VID, FOUR_KB_ALIGN); 
+	
+
+	//change CR3 so we can move the video memory of the new shell into the displayed video memory
+	asm volatile("movl %0, %%eax\n\
+		 movl %%eax, %%cr3\n"
+		 :
+		 : "r" (new_PCB->curr_page_dir)
+		 : "%eax", "memory"
+		 );
+	
+
+	//					dest				source
+	memcpy((uint8_t*) DIRECT_VID, (uint8_t*) FAKE_VID_MEM, FOUR_KB_ALIGN);
+	
+	//Set up paging for program that was previously running
+	asm volatile("movl %0, %%eax\n\
+		 movl %%eax, %%cr3\n"
+		 :
+		 : "r" (curr_PCB->curr_page_dir)
+		 : "%eax", "memory"
+		 );
+	
+
+	//After copying the memory over, go ahead and write the mouse cursor again
+	int old_coord_y = old_mouse_y * NUM_COLS * 2;
+	int old_coord_x = old_mouse_x * 2;
+	if(normal_cursor == 0){
+		*(uint8_t *)(DIRECT_VID + old_coord_y + old_coord_x + 1) = 0x70;
+	}	
+	else{
+		*(uint8_t *)(DIRECT_VID + old_coord_y + old_coord_x + 1) = 0x12;
+	}
+
+
+	//Loop through the pid array and change all of the necessary paging schemes to point to the correct video memory
+	for(i = 0; i <6; i++){
+
+		if(pid_array[i] == 1)
+			temp_PCB = get_PCB_via_pid(i);
+		else
+			temp_PCB = NULL;
+
+		if(temp_PCB != NULL){
+	
+				//make video memory pointer point to real video memory if the PCB's shell is running on the new terminal window
+				if(temp_PCB->shell == shell_pid){
+					((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] = ((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] & FLAGS_WITHOUT_VID_MEM;		//clear top 20 bits
+					((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] |= VIDEO;
+				}
+				//if process' shell isn't being displayed, change its video mem pointer to its fake video memory
+				else{
+					((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] = ((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] & FLAGS_WITHOUT_VID_MEM;
+					((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[VIDEO_MEM_IDX] |= ((uint32_t*) ( (uint32_t)(temp_PCB->curr_page_dir[0]) & VID_MEM_NO_FLAGS ))[1];
+				}
+		}
+
+	}
+	
+	int currX, currY, noNLine;
+
+	//save current lib c variables
+	currX = screen_x;
+	currY = screen_y;
+	noNLine = noNewline;
+	
+	//set lib c variables for appropriate terminal
+	screen_x = x_of_term[shell_pid];
+	screen_y = y_of_term[shell_pid];
+	noNewline = no_new_line[shell_pid];
+	
+	//print character
+	updateCursor();
+	
+	//save current state of the lib c variables
+	x_of_term[shell_pid] = screen_x;
+	y_of_term[shell_pid] = screen_y;
+	no_new_line[shell_pid] = noNewline;
+	
+	//restore lib c variables
+	if(shell_pid != curr_PCB->shell){
+	screen_x = currX;
+	screen_y = currY;
+	noNewline = noNLine;
+	}
+
+}
+
+/*
+ * context_paging
+ *   DESCRIPTION: Saves and updates x and y coordinates for context switching
+ *   INPUTS: old_pid - number of the pid being switched from
+ * 			 new_pid - number of the pid being switched to
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: changes screen_x and screen_y
+ */  
+void context_paging(int old_pid, int new_pid){
+
+	//Grab the necessary PCBs from the given pids
+	PCB_struct_t* old_PCB = get_PCB_via_pid(old_pid);
+	PCB_struct_t* new_PCB = get_PCB_via_pid(new_pid);
+
+
+	
+	//Save the x and y positions of the old process
+	x_of_term[old_PCB->shell] = screen_x;
+	y_of_term[old_PCB->shell] = screen_y;
+	no_new_line[old_PCB->shell] = noNewline;
+
+	//Restore the x and y positions of the new process
+	screen_x = x_of_term[new_PCB->shell];
+	screen_y = y_of_term[new_PCB->shell];
+	noNewline = no_new_line[new_PCB->shell];
+
+	return;
+}
+
+/*
+ * context_switch_handler
+ *   DESCRIPTION: Switches processes being run during context switching
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: 
+ */  
+void context_switch_handler(){
+	send_eoi(0);
+	PCB_struct_t* pcb = get_PCB();	
+
+	//Use index to find next pid to process
+	int i = (pcb->pid + 1);
+	
+	//find a process running with no children
+	while(1){
+	
+		if((pid_array[i] == 1) && ( get_PCB_via_pid(i)->child_process_running == 0 ) ){
+			break;
+		}
+		i++;
+		i = i%8;
+	}	
+	
+	//if in the first shell, enable interrupts from the mouse
+	if ((i == 0) && (enable_mouse == 0)){
+			
+		enable_mouse = 1;
+		enable_irq(12);
+	}
+
+	//get new pcb based off of the pid previously found
+	PCB_struct_t* next_pcb = get_PCB_via_pid(i);
+
+	//update x and y 
+	context_paging(pcb->pid, next_pcb->pid);
+
+	//Set up paging for the new program by loading the correct page directory into CR3
+	asm volatile("movl %0, %%eax\n\
+		 movl %%eax, %%cr3\n"
+		 :
+		 : "r" (next_pcb->curr_page_dir)
+		 : "%eax", "memory"
+		 );
+
+	//Place old esp into the PCB
+	asm volatile("movl %%esp, %0\n\
+		movl %%ebp, %1\n"
+		 : "=r" (pcb->kernel_stack_ptr), "=r" (pcb->context_ebp) 
+		 : 
+		 : "%eax", "memory"
+		 );
+
+	
+	//set the new esp0 in tss
+	//Load the TSS with the correct new kernel base pointer
+	tss.esp0 = (uint32_t) next_pcb->kernel_base_ptr;
+
+	//Place new PCB's esp into the esp register and update to new ebp
+	asm volatile("movl %0, %%esp\n\
+		movl %1, %%ebp\n"
+		 : 
+		 : "r" (next_pcb->kernel_stack_ptr), "r" (next_pcb->context_ebp)
+		 : "%eax", "memory"
+		 );	
+	
+	//initialize the pit again for next interupt to arrive
+	init_PIT();
+	set_speaker(sound_freq);	//set up speakers to play sound again
+	//speakers make sound when mouse clicks are pressed
+	
+	return;
+}
+
+
+
+/*
+ * init_idt_context
+ *   DESCRIPTION: set up idt entry for the PIT
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: idt entry for IRQ0 is set
+ */  
+void init_idt_context() {
+	
+	set_intrpt_gate_desc(IRQ0);				//update idt struct
+
+
+	SET_IDT_ENTRY(idt[IRQ0], context_wrapper);	//set table and offsets from struct
+
+	enable_irq(0);							//enable on the pic
+	
+	return;
+}
+
+/*
+ * RGB_switch_helper
+ *   DESCRIPTION: Handles color changes for terminal switches
+ *   INPUTS: old_shell - shell number of the terminal being switched from
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Changes colors displayed
+ */
+
+void RGB_switch_helper(int old_shell){
+
+	//switch out colors
+	//text save
+	outb(0x07, 0x03C7);			//Change the index to the seventh
+	red_text[old_shell] = inb(0x03C9);		//Read the values sequentially
+	green_text[old_shell] = inb(0x03C9);
+	blue_text[old_shell]= inb(0x03C9);
+	
+	//background save 
+	outb(0x00, 0x03C7);			//Change the index to the 
+	red_back[old_shell] = inb(0x03C9);		//Read the values sequentially
+	green_back[old_shell] = inb(0x03C9);
+	blue_back[old_shell]= inb(0x03C9);
+	
+	
+	//text restore
+	outb(0x07, 0x03C8);		//Change the index to the seventh (text)
+	outb(red_text[shell_pid], 0x03C9);		//Change the values for RGB
+	outb(green_text[shell_pid], 0x03C9);
+	outb(blue_text[shell_pid], 0x03C9);
+	
+	
+	//background restore
+	outb(0x00, 0x03C8);		//Change the index to the zeroth (background)
+	outb(red_back[shell_pid], 0x03C9);		//Change the values for RGB
+	outb(green_back[shell_pid], 0x03C9);
+	outb(blue_back[shell_pid], 0x03C9);
+
+	//Mouse Cursor Color Restore
+	char inv_text_r = 0x3F - red_text[shell_pid];		//Calculate the inverted color for both text and background
+	char inv_text_g = 0x3F - green_text[shell_pid];
+	char inv_text_b = 0x3F - blue_text[shell_pid];
+
+	char inv_back_r = 0x3F - red_back[shell_pid];
+	char inv_back_g = 0x3F - green_back[shell_pid];
+	char inv_back_b = 0x3F - blue_back[shell_pid];
+
+	outb(0x02, 0x3C8);				//Change the cursor attributes to new inverted color
+	outb(inv_text_r, 0x3C9);
+	outb(inv_text_g, 0x3C9);
+	outb(inv_text_b, 0x3C9);
+
+
+	outb(0x01, 0x03C8);
+	outb(inv_back_r, 0x3C9);
+	outb(inv_back_g, 0x3C9);
+	outb(inv_back_b, 0x3C9);
+
+
+	int old_coord_y = old_mouse_y * NUM_COLS * 2;
+	int old_coord_x = old_mouse_x * 2;
+
+	//Don't leave behind a ghost cursor
+	*(uint8_t *)(DIRECT_VID + old_coord_y + old_coord_x + 1) = 0x07;
+
+}
+
+
+
